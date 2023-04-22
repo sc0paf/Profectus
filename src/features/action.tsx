@@ -31,12 +31,20 @@ import { coerceComponent, isCoercableComponent, render } from "util/vue";
 import { computed, Ref, ref, unref } from "vue";
 import { BarOptions, createBar, GenericBar } from "./bars/bar";
 import { ClickableOptions } from "./clickables/clickable";
+<<<<<<< HEAD
+=======
+import { Decorator, GenericDecorator } from "./decorators/common";
+>>>>>>> template/main
 
 /** A symbol used to identify {@link Action} features. */
 export const ActionType = Symbol("Action");
 
 /**
+<<<<<<< HEAD
  * An object that configures a {@link Action}.
+=======
+ * An object that configures an {@link Action}.
+>>>>>>> template/main
  */
 export interface ActionOptions extends Omit<ClickableOptions, "onClick" | "onHold"> {
     /** The cooldown during which the action cannot be performed again, in seconds. */
@@ -71,7 +79,11 @@ export interface BaseAction {
     [GatherProps]: () => Record<string, unknown>;
 }
 
+<<<<<<< HEAD
 /** An object that represens a feature that can be clicked upon, and then have a cooldown before they can be clicked again. */
+=======
+/** An object that represents a feature that can be clicked upon, and then has a cooldown before it can be clicked again. */
+>>>>>>> template/main
 export type Action<T extends ActionOptions> = Replace<
     T & BaseAction,
     {
@@ -102,11 +114,26 @@ export type GenericAction = Replace<
  * @param optionsFunc Action options.
  */
 export function createAction<T extends ActionOptions>(
+<<<<<<< HEAD
     optionsFunc?: OptionsFunc<T, BaseAction, GenericAction>
 ): Action<T> {
     const progress = persistent<DecimalSource>(0);
     return createLazyProxy(() => {
         const action = optionsFunc?.() ?? ({} as ReturnType<NonNullable<typeof optionsFunc>>);
+=======
+    optionsFunc?: OptionsFunc<T, BaseAction, GenericAction>,
+    ...decorators: GenericDecorator[]
+): Action<T> {
+    const progress = persistent<DecimalSource>(0);
+    const decoratedData = decorators.reduce(
+        (current, next) => Object.assign(current, next.getPersistentData?.()),
+        {}
+    );
+    return createLazyProxy(feature => {
+        const action =
+            optionsFunc?.call(feature, feature) ??
+            ({} as ReturnType<NonNullable<typeof optionsFunc>>);
+>>>>>>> template/main
         action.id = getUniqueID("action-");
         action.type = ActionType;
         action[Component] = ClickableComponent as GenericComponent;
@@ -114,8 +141,18 @@ export function createAction<T extends ActionOptions>(
         // Required because of display changing types
         const genericAction = action as unknown as GenericAction;
 
+<<<<<<< HEAD
         action.isHolding = ref(false);
         action.progress = progress;
+=======
+        for (const decorator of decorators) {
+            decorator.preConstruct?.(action);
+        }
+
+        action.isHolding = ref(false);
+        action.progress = progress;
+        Object.assign(action, decoratedData);
+>>>>>>> template/main
 
         processComputable(action as T, "visibility");
         setDefault(action, "visibility", Visibility.Visible);
@@ -227,6 +264,16 @@ export function createAction<T extends ActionOptions>(
             }
         };
 
+<<<<<<< HEAD
+=======
+        for (const decorator of decorators) {
+            decorator.postConstruct?.(action);
+        }
+
+        const decoratedProps = decorators.reduce((current, next) =>
+            Object.assign(current, next.getGatheredProps?.(action))
+        );
+>>>>>>> template/main
         action[GatherProps] = function (this: GenericAction) {
             const {
                 display,
@@ -250,7 +297,12 @@ export function createAction<T extends ActionOptions>(
                 canClick,
                 small,
                 mark,
+<<<<<<< HEAD
                 id
+=======
+                id,
+                ...decoratedProps
+>>>>>>> template/main
             };
         };
 

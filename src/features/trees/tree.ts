@@ -1,3 +1,4 @@
+import { Decorator, GenericDecorator } from "features/decorators/common";
 import type {
     CoercableComponent,
     GenericComponent,
@@ -101,13 +102,26 @@ export type GenericTreeNode = Replace<
  * @param optionsFunc Tree Node options.
  */
 export function createTreeNode<T extends TreeNodeOptions>(
-    optionsFunc?: OptionsFunc<T, BaseTreeNode, GenericTreeNode>
+    optionsFunc?: OptionsFunc<T, BaseTreeNode, GenericTreeNode>,
+    ...decorators: GenericDecorator[]
 ): TreeNode<T> {
-    return createLazyProxy(() => {
-        const treeNode = optionsFunc?.() ?? ({} as ReturnType<NonNullable<typeof optionsFunc>>);
+    const decoratedData = decorators.reduce(
+        (current, next) => Object.assign(current, next.getPersistentData?.()),
+        {}
+    );
+    return createLazyProxy(feature => {
+        const treeNode =
+            optionsFunc?.call(feature, feature) ??
+            ({} as ReturnType<NonNullable<typeof optionsFunc>>);
         treeNode.id = getUniqueID("treeNode-");
         treeNode.type = TreeNodeType;
         treeNode[Component] = TreeNodeComponent as GenericComponent;
+
+        for (const decorator of decorators) {
+            decorator.preConstruct?.(treeNode);
+        }
+
+        Object.assign(decoratedData);
 
         processComputable(treeNode as T, "visibility");
         setDefault(treeNode, "visibility", Visibility.Visible);
@@ -119,6 +133,10 @@ export function createTreeNode<T extends TreeNodeOptions>(
         processComputable(treeNode as T, "classes");
         processComputable(treeNode as T, "style");
         processComputable(treeNode as T, "mark");
+
+        for (const decorator of decorators) {
+            decorator.postConstruct?.(treeNode);
+        }
 
         if (treeNode.onClick) {
             const onClick = treeNode.onClick.bind(treeNode);
@@ -137,6 +155,10 @@ export function createTreeNode<T extends TreeNodeOptions>(
             };
         }
 
+        const decoratedProps = decorators.reduce(
+            (current, next) => Object.assign(current, next.getGatheredProps?.(treeNode)),
+            {}
+        );
         treeNode[GatherProps] = function (this: GenericTreeNode) {
             const {
                 display,
@@ -162,7 +184,8 @@ export function createTreeNode<T extends TreeNodeOptions>(
                 glowColor,
                 canClick,
                 mark,
-                id
+                id,
+                ...decoratedProps
             };
         };
 
@@ -242,8 +265,8 @@ export type GenericTree = Replace<
 export function createTree<T extends TreeOptions>(
     optionsFunc: OptionsFunc<T, BaseTree, GenericTree>
 ): Tree<T> {
-    return createLazyProxy(() => {
-        const tree = optionsFunc();
+    return createLazyProxy(feature => {
+        const tree = optionsFunc.call(feature, feature);
         tree.id = getUniqueID("tree-");
         tree.type = TreeType;
         tree[Component] = TreeComponent as GenericComponent;

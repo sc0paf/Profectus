@@ -1,6 +1,7 @@
 import { isArray } from "@vue/shared";
 import Toggle from "components/fields/Toggle.vue";
 import ChallengeComponent from "features/challenges/Challenge.vue";
+import { GenericDecorator } from "features/decorators/common";
 import type {
     CoercableComponent,
     GenericComponent,
@@ -11,17 +12,17 @@ import type {
 import {
     Component,
     GatherProps,
+    Visibility,
     getUniqueID,
     isVisible,
     jsx,
-    setDefault,
-    Visibility
+    setDefault
 } from "features/feature";
 import type { GenericReset } from "features/reset";
 import { globalBus } from "game/events";
 import type { Persistent } from "game/persistence";
 import { persistent } from "game/persistence";
-import { maxRequirementsMet, Requirements } from "game/requirements";
+import { Requirements, maxRequirementsMet } from "game/requirements";
 import settings, { registerSettingField } from "game/settings";
 import type { DecimalSource } from "util/bignum";
 import Decimal from "util/bignum";
@@ -148,19 +149,30 @@ export type GenericChallenge = Replace<
  * @param optionsFunc Challenge options.
  */
 export function createChallenge<T extends ChallengeOptions>(
-    optionsFunc: OptionsFunc<T, BaseChallenge, GenericChallenge>
+    optionsFunc: OptionsFunc<T, BaseChallenge, GenericChallenge>,
+    ...decorators: GenericDecorator[]
 ): Challenge<T> {
     const completions = persistent(0);
     const active = persistent(false, false);
-    return createLazyProxy(() => {
-        const challenge = optionsFunc();
+    const decoratedData = decorators.reduce(
+        (current, next) => Object.assign(current, next.getPersistentData?.()),
+        {}
+    );
+    return createLazyProxy(feature => {
+        const challenge = optionsFunc.call(feature, feature);
 
         challenge.id = getUniqueID("challenge-");
         challenge.type = ChallengeType;
         challenge[Component] = ChallengeComponent as GenericComponent;
 
+        for (const decorator of decorators) {
+            decorator.preConstruct?.(challenge);
+        }
+
         challenge.completions = completions;
         challenge.active = active;
+        Object.assign(challenge, decoratedData);
+
         challenge.completed = computed(() =>
             Decimal.gt((challenge as GenericChallenge).completions.value, 0)
         );
@@ -258,6 +270,14 @@ export function createChallenge<T extends ChallengeOptions>(
             });
         }
 
+        for (const decorator of decorators) {
+            decorator.postConstruct?.(challenge);
+        }
+
+        const decoratedProps = decorators.reduce(
+            (current, next) => Object.assign(current, next.getGatheredProps?.(challenge)),
+            {}
+        );
         challenge[GatherProps] = function (this: GenericChallenge) {
             const {
                 active,
@@ -287,7 +307,8 @@ export function createChallenge<T extends ChallengeOptions>(
                 mark,
                 id,
                 toggle,
-                requirements
+                requirements,
+                ...decoratedProps
             };
         };
 

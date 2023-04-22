@@ -2,11 +2,10 @@ import { createResource, Resource } from "features/resources/resource";
 import Formula, {
     calculateCost,
     calculateMaxAffordable,
-    printFormula,
     unrefFormulaSource
 } from "game/formulas/formulas";
 import type { GenericFormula, InvertibleFormula } from "game/formulas/types";
-import Decimal, { DecimalSource, format } from "util/bignum";
+import Decimal, { DecimalSource } from "util/bignum";
 import { beforeAll, describe, expect, test } from "vitest";
 import { ref } from "vue";
 import "../utils";
@@ -151,7 +150,7 @@ describe("Formula Equality Checking", () => {
     describe("Formula aliases", () => {
         function testAliases<T extends FormulaFunctions>(
             aliases: T[],
-            args: Parameters<typeof Formula[T]>
+            args: Parameters<(typeof Formula)[T]>
         ) {
             describe(aliases[0], () => {
                 let formula: GenericFormula;
@@ -239,7 +238,7 @@ describe("Creating Formulas", () => {
 
     function checkFormula<T extends FormulaFunctions>(
         functionName: T,
-        args: Readonly<Parameters<typeof Formula[T]>>
+        args: Readonly<Parameters<(typeof Formula)[T]>>
     ) {
         let formula: GenericFormula;
         beforeAll(() => {
@@ -261,7 +260,7 @@ describe("Creating Formulas", () => {
     // It's a lot of tests, but I'd rather be exhaustive
     function testFormulaCall<T extends FormulaFunctions>(
         functionName: T,
-        args: Readonly<Parameters<typeof Formula[T]>>
+        args: Readonly<Parameters<(typeof Formula)[T]>>
     ) {
         if ((functionName === "slog" || functionName === "layeradd") && args[0] === -1) {
             // These cases in particular take a long time, so skip them
@@ -868,6 +867,26 @@ describe("Conditionals", () => {
                 Formula.if(variable, false, value => Formula.sqrt(value)).invert(10)
             ).compare_tolerance(10));
     });
+    describe("Evaluates correctly with condition false and else statement", () => {
+        test("Evaluates correctly", () =>
+            expect(
+                Formula.if(
+                    constant,
+                    false,
+                    value => Formula.sqrt(value),
+                    value => value.times(2)
+                ).evaluate()
+            ).compare_tolerance(20));
+        test("Inverts correctly with variable in input", () =>
+            expect(
+                Formula.if(
+                    variable,
+                    false,
+                    value => Formula.sqrt(value),
+                    value => value.times(2)
+                ).invert(20)
+            ).compare_tolerance(10));
+    });
 
     describe("Evaluates correctly with condition true", () => {
         test("Evaluates correctly", () =>
@@ -1152,6 +1171,24 @@ describe("Buy Max", () => {
                     new Decimal(0)
                 );
             const calculatedCost = calculateCost(formula, maxAffordable.value);
+            // Since we're summing all the purchases this should be equivalent
+            expect(calculatedCost).compare_tolerance(actualCost);
+        });
+        test("Handles summing purchases when making very few purchases", () => {
+            const purchases = ref(0);
+            const variable = Formula.variable(purchases);
+            const formula = variable.add(1);
+            const resource = createResource(ref(3));
+            const maxAffordable = calculateMaxAffordable(formula, resource, true);
+            expect(maxAffordable.value).compare_tolerance(2);
+
+            const actualCost = new Array(2)
+                .fill(null)
+                .reduce(
+                    (acc, _, i) => acc.add(formula.evaluate(i + purchases.value)),
+                    new Decimal(0)
+                );
+            const calculatedCost = calculateCost(formula, maxAffordable.value, true);
             // Since we're summing all the purchases this should be equivalent
             expect(calculatedCost).compare_tolerance(actualCost);
         });

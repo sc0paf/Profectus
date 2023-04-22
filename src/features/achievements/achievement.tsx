@@ -2,18 +2,19 @@ import { computed } from "@vue/reactivity";
 import { isArray } from "@vue/shared";
 import Select from "components/fields/Select.vue";
 import AchievementComponent from "features/achievements/Achievement.vue";
+import { GenericDecorator } from "features/decorators/common";
 import {
     CoercableComponent,
     Component,
     GatherProps,
     GenericComponent,
-    getUniqueID,
-    jsx,
     OptionsFunc,
     Replace,
-    setDefault,
     StyleValue,
-    Visibility
+    Visibility,
+    getUniqueID,
+    jsx,
+    setDefault
 } from "features/feature";
 import { globalBus } from "game/events";
 import "game/notifications";
@@ -21,10 +22,10 @@ import type { Persistent } from "game/persistence";
 import { persistent } from "game/persistence";
 import player from "game/player";
 import {
+    Requirements,
     createBooleanRequirement,
     createVisibilityRequirement,
     displayRequirements,
-    Requirements,
     requirementsMet
 } from "game/requirements";
 import settings, { registerSettingField } from "game/settings";
@@ -137,14 +138,25 @@ export type GenericAchievement = Replace<
  * @param optionsFunc Achievement options.
  */
 export function createAchievement<T extends AchievementOptions>(
-    optionsFunc?: OptionsFunc<T, BaseAchievement, GenericAchievement>
+    optionsFunc?: OptionsFunc<T, BaseAchievement, GenericAchievement>,
+    ...decorators: GenericDecorator[]
 ): Achievement<T> {
     const earned = persistent<boolean>(false, false);
-    return createLazyProxy(() => {
-        const achievement = optionsFunc?.() ?? ({} as ReturnType<NonNullable<typeof optionsFunc>>);
+    const decoratedData = decorators.reduce(
+        (current, next) => Object.assign(current, next.getPersistentData?.()),
+        {}
+    );
+    return createLazyProxy(feature => {
+        const achievement =
+            optionsFunc?.call(feature, feature) ??
+            ({} as ReturnType<NonNullable<typeof optionsFunc>>);
         achievement.id = getUniqueID("achievement-");
         achievement.type = AchievementType;
         achievement[Component] = AchievementComponent as GenericComponent;
+
+        for (const decorator of decorators) {
+            decorator.preConstruct?.(achievement);
+        }
 
         achievement.earned = earned;
         achievement.complete = function () {
@@ -176,6 +188,8 @@ export function createAchievement<T extends AchievementOptions>(
                 );
             }
         };
+
+        Object.assign(achievement, decoratedData);
 
         processComputable(achievement as T, "visibility");
         setDefault(achievement, "visibility", Visibility.Visible);
@@ -217,6 +231,14 @@ export function createAchievement<T extends AchievementOptions>(
         processComputable(achievement as T, "showPopups");
         setDefault(achievement, "showPopups", true);
 
+        for (const decorator of decorators) {
+            decorator.postConstruct?.(achievement);
+        }
+
+        const decoratedProps = decorators.reduce(
+            (current, next) => Object.assign(current, next.getGatheredProps?.(achievement)),
+            {}
+        );
         achievement[GatherProps] = function (this: GenericAchievement) {
             const {
                 visibility,
@@ -240,7 +262,8 @@ export function createAchievement<T extends AchievementOptions>(
                 classes,
                 mark,
                 small,
-                id
+                id,
+                ...decoratedProps
             };
         };
 
